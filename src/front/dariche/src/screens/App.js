@@ -10,15 +10,21 @@ import '../styles/App.css';
 class App extends React.Component {
 	constructor(props) {
 		super(props);
+		if (!props.accountId) {
+			throw new Error('User does not have an account id');
+		}
 		this.state = {
-			isLoggedIn: false,
-			myAID: '',
+			myAID: props.accountId,
 			isConnecting: false,
 			isConnected: false,
 			peerAccountId: '',
 			peer: null,
 		};
 		this.selectedFile = React.createRef();
+	}
+
+	componentDidMount() {
+		this.registerToServer()
 	}
 
 	componentWillUnmount() {
@@ -89,13 +95,6 @@ class App extends React.Component {
 		});
 	};
 
-	onLoginClicked = () => {
-		if (this.state.myAID === '') {
-			return;
-		}
-		this.setState({isLoggedIn: true});
-		this.registerToServer();
-	}
 
 	onConnectClicked = async () => {
 		this.setupPeer(this.state.peerAccountId, true);
@@ -153,26 +152,7 @@ class App extends React.Component {
 		download(file, 'test.txt');  // TODO: save with a correct extention and name ...
 	};
 
-	renderLoginForm = () => {
-		return (
-			<div>
-				<input
-					type="text"
-					onChange={evt => this.setState({myAID: evt.target.value})}
-				/>
-				<input
-				type="button"
-				value="login"
-				onClick={this.onLoginClicked}
-				/>
-			</div>
-		);
-	}
-
 	render() {
-		if (!this.state.isLoggedIn) {
-			return (this.renderLoginForm());
-		}
 		return (
 			<div>
 			<h1>Dariche</h1>

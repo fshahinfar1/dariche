@@ -1,0 +1,19 @@
+
+body {
+	background-color: lightgray;
+}
+
+.login-form {
+	display: inline-block;
+	position: relative;
+	left: 50%;
+	top: 50px;
+	transform: translate(-50%, 0);
+	border: 1px solid silver;
+	background-color: white;
+}
+
+.login-form input {
+	display: block;
+	margin: 20px;
+}
