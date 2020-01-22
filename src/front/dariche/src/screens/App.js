@@ -1,22 +1,28 @@
 import React from 'react';
 import Peer from 'simple-peer';
+import {serverAddress} from '../constants';
+import requests from '../misc/requests';
+import download from '../misc/download';
 import '../styles/App.css';
+
+
 
 class App extends React.Component {
 	constructor(props) {
 		super(props);
 		this.state = {
+			isLoggedIn: false,
+			myAID: '',
 			isConnecting: false,
 			isConnected: false,
 			peerAccountId: '',
 			peer: null,
-			selectedFile: null,
-			//self: null,
 		};
+		this.selectedFile = React.createRef();
 	}
 
-	componentDidMount() {
-		this.registerToServer()
+	componentWillUnmount() {
+		this.clearPolling();
 	}
 
 	/*
@@ -27,31 +33,50 @@ class App extends React.Component {
 	registerToServer = async () => {
 		// Send a message to let the server now I am here!
 		// ...
+		const helloURL = `${serverAddress}/hello`;
+		const payload = {sender: this.state.myAID,};
+		requests.post(helloURL, payload);
 		this.pollInterval = setInterval(this.pollSignallingServer, 3000);
 	};
+
+	clearPolling = () => {
+		if (this.pollInterval !== undefined) {
+			clearInterval(this.pollInterval);
+			this.pollInterval = undefined;
+		}
+	}
 
 	/*
 	 * poll server, checking if another user has
 	 * any message for this client.
 	 * **/
-	pollSignallingServer = () => {
-		// send request to the serever
-		// if there is a connection request
-		// then call this.onConnectRequest
-		// function and pass then offer.
-		// ==
-		// If this client has started the
-		// communication then it is waiting for
-		// the answer. if the answer is there then
-		// call this.onAnswerReceived
+	pollSignallingServer = async () => {
+		const url = `${serverAddress}/poll`;
+		const resp = await requests.post(url, {sender: this.state.myAID});
+		if (resp === undefined) return;
+		const messages = resp.queue;
+		if (messages === undefined) return;
+		messages.forEach(item => {
+			console.log(item);
+			const sender = item.sender;
+			const payload = JSON.parse(item.message);
+			this.onSignallingData(sender, payload);
+		});
 	}
 
 	/*
 	 * Sending data to the user with the given
 	 * account id through signalling server.
 	 * **/
-	pushSignallingServer = (accountId, data) => {
+	pushSignallingServer = (aid, paid, data) => {
 		// send data to signalling server
+		const url = serverAddress + '/';
+		let payload = {
+			sender: aid,
+			recipient: paid,
+			message: JSON.stringify(data),
+		}
+		requests.post(url, payload);
 	}
 
 	onConnectedToPeer = peer => {
@@ -64,51 +89,63 @@ class App extends React.Component {
 		});
 	};
 
+	onLoginClicked = () => {
+		if (this.state.myAID === '') {
+			return;
+		}
+		this.setState({isLoggedIn: true});
+		this.registerToServer();
+	}
+
 	onConnectClicked = async () => {
-		console.log('connecting ...');
-		// disable connect button
-		await this.setState({isConnecting: true});
-		const peer = new Peer();
-		peer.on('signal', function (data) {
-			// this should be the offer and ...
-			const paid = this.state.peerAccountId; // peer account id
-			this.pushSignallingServer(paid, data);
-		});
-		peer.on('connect', () => this.onConnectedToPeer(peer));
-		peer.on('data', this.onDataReceived);
+		this.setupPeer(this.state.peerAccountId, true);
 	};
 
 	onShareClicked = () => {
-		if (this.state.selectedFile === null) {
+		if (this.state.peer === null) return;
+		let file = this.selectedFile.current;
+		if (file === null) {
 			// show a flash message that no file is selected
 			// TODO: seperate file validation from App component
 			return;
 		}
-		console.log('sending file:', this.state.selectedFile)
-		this.state.selectedFile.arrayBuffer()
+		file = file.files[0];
+		if (file === null) return;
+		console.log('sending file:', file);
+		file.arrayBuffer()
 		.then(buffer => {
 			this.setState({isSending: true});
-			this.state.self.send(buffer);
+			this.state.peer.send(buffer);
 		});
 	};
 
-	onConnectRequest = offer => {
-		// TODO: check if this is offer message is needed or not!
+	setupPeer = (paid, initiator) => {
 		console.log('connecting ...');
-		await this.setState({isConnecting: true});
-		// TODO: seperate peer creating logic with another function
-		// because there are a lot in common with this.onConnectClicked
+		this.setState({isConnecting: true});
 		const opts = {
-			initiator: true,
+			initiator: initiator,
 		}
 		const peer = new Peer(opts);
-		peer.on('signal', function (data) {
+		peer.on('signal', data => {
+			const aid = this.state.myAID;
 			const paid = this.state.peerAccountId;
-			this.pushSignallingServer(paid, data);
+			this.pushSignallingServer(aid, paid, data);
 		});
+		this.setState({peer, peerAccountId: paid,});
 		peer.on('connect', () => this.onConnectedToPeer(peer));
 		peer.on('data', this.onDataReceived);
+		return peer;
 	};
+
+	onSignallingData = (sender, data) => {
+		let peer = this.state.peer;
+		if (peer === null) {
+			console.error('received signalling data but has not setup peer');
+			peer = this.setupPeer(sender, false);
+		}
+		console.log('signal', data);
+		peer.signal(data);
+	}
 
 	onDataReceived = data => {
 		const file = new Blob([data]);
@@ -116,10 +153,30 @@ class App extends React.Component {
 		download(file, 'test.txt');  // TODO: save with a correct extention and name ...
 	};
 
+	renderLoginForm = () => {
+		return (
+			<div>
+				<input
+					type="text"
+					onChange={evt => this.setState({myAID: evt.target.value})}
+				/>
+				<input
+				type="button"
+				value="login"
+				onClick={this.onLoginClicked}
+				/>
+			</div>
+		);
+	}
+
 	render() {
+		if (!this.state.isLoggedIn) {
+			return (this.renderLoginForm());
+		}
 		return (
 			<div>
 			<h1>Dariche</h1>
+			<h2>{`logged in as ${this.state.myAID}`}</h2>
 			{
 				this.state.isConnected ? (
 					<div>
@@ -127,6 +184,7 @@ class App extends React.Component {
 					type="file"
 					id="file-input"
 					disabled={this.isSending ? 'disabled' : ''}
+					ref={this.selectedFile}
 					/>
 					<input
 					type="button"
@@ -140,7 +198,7 @@ class App extends React.Component {
 					<input
 					type="text"
 					placeholder="peer account id"
-					onTextChange={text => this.setState({peerAccountId:text})}
+					onChange={evt => this.setState({peerAccountId:evt.target.value})}
 					disabled={this.state.isConnecting ? 'disabled' : ''}
 					/>
 					<input
