@@ -17,8 +17,8 @@ class App extends React.Component {
 			isConnected: false,
 			peerAccountId: '',
 			peer: null,
-			selectedFile: null,
 		};
+		this.selectedFile = React.createRef();
 	}
 
 	componentWillUnmount() {
@@ -34,7 +34,7 @@ class App extends React.Component {
 		// Send a message to let the server now I am here!
 		// ...
 		const helloURL = `${serverAddress}/hello`;
-		const payload = {aid: this.state.myAID,};
+		const payload = {sender: this.state.myAID,};
 		requests.post(helloURL, payload);
 		this.pollInterval = setInterval(this.pollSignallingServer, 3000);
 	};
@@ -52,13 +52,15 @@ class App extends React.Component {
 	 * **/
 	pollSignallingServer = async () => {
 		const url = `${serverAddress}/poll`;
-		const resp = await requests.post(url, {aid: this.state.myAID});
+		const resp = await requests.post(url, {sender: this.state.myAID});
 		if (resp === undefined) return;
 		const messages = resp.queue;
 		if (messages === undefined) return;
 		messages.forEach(item => {
-			const payload = JSON.parse(item);
-			this.onSignallingData(payload);
+			console.log(item);
+			const sender = item.sender;
+			const payload = JSON.parse(item.message);
+			this.onSignallingData(sender, payload);
 		});
 	}
 
@@ -66,11 +68,12 @@ class App extends React.Component {
 	 * Sending data to the user with the given
 	 * account id through signalling server.
 	 * **/
-	pushSignallingServer = (accountId, data) => {
+	pushSignallingServer = (aid, paid, data) => {
 		// send data to signalling server
 		const url = serverAddress + '/';
 		let payload = {
-			paid: accountId,
+			sender: aid,
+			recipient: paid,
 			message: JSON.stringify(data),
 		}
 		requests.post(url, payload);
@@ -95,24 +98,28 @@ class App extends React.Component {
 	}
 
 	onConnectClicked = async () => {
-		this.setupPeer(true);
+		this.setupPeer(this.state.peerAccountId, true);
 	};
 
 	onShareClicked = () => {
-		if (this.state.selectedFile === null) {
+		if (this.state.peer === null) return;
+		let file = this.selectedFile.current;
+		if (file === null) {
 			// show a flash message that no file is selected
 			// TODO: seperate file validation from App component
 			return;
 		}
-		console.log('sending file:', this.state.selectedFile)
-		this.state.selectedFile.arrayBuffer()
+		file = file.files[0];
+		if (file === null) return;
+		console.log('sending file:', file);
+		file.arrayBuffer()
 		.then(buffer => {
 			this.setState({isSending: true});
-			this.state.self.send(buffer);
+			this.state.peer.send(buffer);
 		});
 	};
 
-	setupPeer = initiator => {
+	setupPeer = (paid, initiator) => {
 		console.log('connecting ...');
 		this.setState({isConnecting: true});
 		const opts = {
@@ -120,21 +127,24 @@ class App extends React.Component {
 		}
 		const peer = new Peer(opts);
 		peer.on('signal', data => {
+			const aid = this.state.myAID;
 			const paid = this.state.peerAccountId;
-			this.pushSignallingServer(paid, data);
+			this.pushSignallingServer(aid, paid, data);
 		});
-		this.setState({peer,});
+		this.setState({peer, peerAccountId: paid,});
 		peer.on('connect', () => this.onConnectedToPeer(peer));
 		peer.on('data', this.onDataReceived);
+		return peer;
 	};
 
-	onSignallingData = data => {
-		const peer = this.state.peer;
+	onSignallingData = (sender, data) => {
+		let peer = this.state.peer;
 		if (peer === null) {
 			console.error('received signalling data but has not setup peer');
-			this.setupPeer(false);
+			peer = this.setupPeer(sender, false);
 		}
-		this.state.peer.signal(data);
+		console.log('signal', data);
+		peer.signal(data);
 	}
 
 	onDataReceived = data => {
@@ -174,6 +184,7 @@ class App extends React.Component {
 					type="file"
 					id="file-input"
 					disabled={this.isSending ? 'disabled' : ''}
+					ref={this.selectedFile}
 					/>
 					<input
 					type="button"
