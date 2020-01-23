@@ -24,6 +24,7 @@ class App extends React.Component {
 		};
 		this.selectedFile = React.createRef();
 		this.fileDescription = '';
+		this.rBuffers = [];
 	}
 
 	componentDidMount() {
@@ -66,7 +67,7 @@ class App extends React.Component {
 		const messages = resp.queue;
 		if (messages === undefined) return;
 		messages.forEach(item => {
-			console.log(item);
+			// console.log(item);
 			const sender = item.sender;
 			const type = item.type;
 			const payload = JSON.parse(item.message);
@@ -95,7 +96,7 @@ class App extends React.Component {
 			message: JSON.stringify(data),
 			type,
 		}
-		console.log('payload', payload);
+		// console.log('payload', payload);
 		requests.post(url, payload);
 	}
 
@@ -133,15 +134,40 @@ class App extends React.Component {
 	 * receives data over webRTC data channel
 	 * **/
 	onDataReceived = data => {
-		console.log(data, typeof(data));
-		if (data.type === 'filereq') {
-			this.sendFile(data.fileName);
-		} else {
-			const file = new Blob([data]);
-			console.log('received file:', file);
-			download(file, 'test.txt');  // TODO: save with a correct extention and name ...
+		const sender = this.state.peerAccountId;
+		console.log('sender is ', sender);
+		if (sender === '') {
+			throw new Error('receive data on data channel but {paid} is not set');
+		}
+		try {
+			const _data = JSON.parse(data.toString());
+			console.log('on string data from web', _data);
+			if (_data.type === 'filereq') {
+				this.sendFile(_data.fileName);
+			} else if (_data.type === 'filedone') {
+				console.log('all chunks received');
+				this.onAllFileChunkReceived(sender);
+			} else if (_data.type === 'goodbye') {
+				this.disconnectFromPeer(false);
+			} else {
+				this.receiveFile(sender, data);
+			}
+		} catch {
+			this.receiveFile(sender, data)
 		}
 	};
+
+	onAllFileChunkReceived = sender => {
+		console.log('on all file chunk received');
+		if (!(sender in this.rBuffers)) {
+			throw new Error('File received event but no buffer allocated!');
+		}
+		const rcvBuf = this.rBuffers[sender];
+		const file = new Blob(rcvBuf);
+		console.log('received file:', file);
+		download(file, 'test.txt');  // TODO: save with a correct extention and name ...
+		this.disconnectFromPeer(true);
+	}
 
 	/*
 	 * This function shares a file descriptor with
@@ -152,7 +178,7 @@ class App extends React.Component {
 		if (file === null, file.files[0] === null)
 			return
 		file = file.files[0];
-		console.log(file);
+		// console.log(file);
 		const description = this.state.fileDesc;
 		const url = `${serverAddress}/relay`;
 		const payload = {
@@ -226,6 +252,24 @@ class App extends React.Component {
 		this.setupPeer(paid, true, callback);
 	};
 
+	disconnectFromPeer = (notify, callback) => {
+		const peer = this.state.peer;
+		if (peer !== null) {
+			if (notify) {
+				const payload = {type:'goodbye',}
+				peer.send(JSON.stringify(payload));
+			}
+			peer.destroy();
+		}
+		this.setState({
+			peer: null,
+			peerAccountId: '',
+			isConnected: false,
+			isConnecting: false,
+		});
+		callback.call();
+	}
+
 	/*
 	 * Get the file from the shared files using
 	 * a file id (file name) and start uploading to
@@ -239,6 +283,7 @@ class App extends React.Component {
 			console.error('sending file but peer not setup!');
 			return;
 		}
+		console.log('looking for file', fileId);
 		let file = this.findFile(fileId);
 		if (file === undefined) {
 			console.log('requested file not found');
@@ -258,13 +303,36 @@ class App extends React.Component {
 		console.log('sending file:', file.name);
 		file.arrayBuffer()
 			.then(buffer => {
+				// Send files in chunks
 				this.setState({isSending: true});
-				this.state.peer.send(buffer);
+				const len = buffer.byteLength;
+				const chunkSize = 16 * 1024 * 1024; // 16KB chunks
+				let sent = 0;
+				while (sent < len) {
+					const chunk = buffer.slice(sent, chunkSize);
+					sent += chunkSize;
+					this.state.peer.send(chunk);
+				}
+				const payload = {
+					type: 'filedone',
+				}
+				this.state.peer.send(JSON.stringify(payload));
 			});
 	};
 
 	findFile = fileId => {
-		let file = this.state.mySharedFiles.find(item => item.fileName === fileId);
+		const file = this.state.mySharedFiles
+									.find(item => item.fileId === fileId);
+		return file
+	}
+
+	receiveFile = (sender, data) => {
+		if (!(sender in this.rBuffers)) {
+			this.rBuffers[sender] = [];
+		}
+		const rcvBuf = this.rBuffers[sender];
+		rcvBuf.push(data);
+		console.log('file chunk received');
 	}
 
 	// ===== rendering ========================================
@@ -295,6 +363,7 @@ class App extends React.Component {
 			<input
 			type="text"
 			placeholder="peer account id"
+			value={this.state.peerAccountId}
 			onChange={evt => this.setState({peerAccountId:evt.target.value})}
 			disabled={this.state.isConnecting ? 'disabled' : ''}
 			/>
