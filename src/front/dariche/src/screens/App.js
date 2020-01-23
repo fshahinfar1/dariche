@@ -109,47 +109,6 @@ class App extends React.Component {
 		});
 	};
 
-
-	onConnectRequest = async () => {
-		this.setupPeer(this.state.peerAccountId, true);
-	};
-
-	onSendRequest = () => {
-		if (this.state.peer === null) return;
-		let file = this.selectedFile.current;
-		if (file === null) {
-			// show a flash message that no file is selected
-			// TODO: seperate file validation from App component
-			return;
-		}
-		file = file.files[0];
-		if (file === null) return;
-		console.log('sending file:', file);
-		file.arrayBuffer()
-			.then(buffer => {
-				this.setState({isSending: true});
-				this.state.peer.send(buffer);
-			});
-	};
-
-	setupPeer = (paid, initiator) => {
-		console.log('connecting ...');
-		this.setState({isConnecting: true});
-		const opts = {
-			initiator: initiator,
-		}
-		const peer = new Peer(opts);
-		peer.on('signal', data => {
-			const aid = this.state.myAID;
-			const paid = this.state.peerAccountId;
-			this.pushSignallingServer(aid, paid, data, 'signal');
-		});
-		this.setState({peer, peerAccountId: paid,});
-		peer.on('connect', () => this.onConnectedToPeer(peer));
-		peer.on('data', this.onDataReceived);
-		return peer;
-	};
-
 	/*
 	 * This function is called when a signalling
 	 * data is received over shared channel
@@ -157,7 +116,7 @@ class App extends React.Component {
 	onSignallingData = (sender, data) => {
 		let peer = this.state.peer;
 		if (peer === null) {
-			console.error('received signalling data but has not setup peer');
+			// setting up peer
 			peer = this.setupPeer(sender, false);
 		}
 		// console.log('signal', data);
@@ -174,9 +133,14 @@ class App extends React.Component {
 	 * receives data over webRTC data channel
 	 * **/
 	onDataReceived = data => {
-		const file = new Blob([data]);
-		console.log('received file:', file);
-		download(file, 'test.txt');  // TODO: save with a correct extention and name ...
+		console.log(data, typeof(data));
+		if (data.type === 'filereq') {
+			this.sendFile(data.fileName);
+		} else {
+			const file = new Blob([data]);
+			console.log('received file:', file);
+			download(file, 'test.txt');  // TODO: save with a correct extention and name ...
+		}
 	};
 
 	/*
@@ -196,14 +160,111 @@ class App extends React.Component {
 			fileSize: file.size,
 			description: this.fileDescription,
 		};
-		this.pushSignallingServer(this.state.myAID, this.state.peerAccountId,
+		const recipient = this.state.peerAccountId;
+		this.pushSignallingServer(this.state.myAID, recipient,
 															payload, 'filedesc');
+		// update my shared files state
+		const fileId = file.name;
+		let fileDesc = this.findFile(fileId);
+		if (fileDesc === undefined) {
+			fileDesc = {
+				fileId: file.name,
+				acl: [], // access control list
+				file: file,
+			}
+		}
+		fileDesc.acl.push(recipient);
+		const mySharedFiles = this.state.
+											mySharedFiles.filter(file => file.fileId !== fileId)
+		mySharedFiles.push(fileDesc);
+		this.setState({mySharedFiles,});
+	}
+
+	onDownloadFileClicked = fileDesc => {
+		console.log('request download', fileDesc);
+		const sender = fileDesc.sender;
+		const fname = fileDesc.fileName;
+		this.connectToPeer(sender, () => {
+			// send file request through data channel
+			const peer = this.state.peer;
+			const payload = {
+				type: 'filereq',
+				...fileDesc
+			}
+			peer.send(JSON.stringify(payload));
+		});
 	}
 
 	onTextAreaChange = evnt => {
 		const text = evnt.target.value;
 		console.log(text);
 		this.fileDescription = text;
+	}
+
+	setupPeer = (paid, initiator, callback) => {
+		console.log(`connecting to ${paid} ...`);
+		this.setState({isConnecting: true});
+		const opts = {
+			initiator: initiator,
+		}
+		const peer = new Peer(opts);
+		peer.on('signal', data => {
+			const aid = this.state.myAID;
+			const paid = this.state.peerAccountId;
+			this.pushSignallingServer(aid, paid, data, 'signal');
+		});
+		this.setState({peer, peerAccountId: paid,});
+		peer.on('connect', () => {
+			this.onConnectedToPeer(peer)
+			if (callback !== undefined) callback.call();
+		});
+		peer.on('data', this.onDataReceived);
+		return peer;
+	};
+
+	connectToPeer = (paid, callback) => {
+		this.setupPeer(paid, true, callback);
+	};
+
+	/*
+	 * Get the file from the shared files using
+	 * a file id (file name) and start uploading to
+	 * peer through data channel.
+	 * The file could be unshared and the client
+	 * can respond with fail request.
+	 * **/
+	sendFile = fileId => {
+		const paid = this.state.peerAccountId;
+		if (this.state.peer === null || paid === '') {
+			console.error('sending file but peer not setup!');
+			return;
+		}
+		let file = this.findFile(fileId);
+		if (file === undefined) {
+			console.log('requested file not found');
+			// TODO: inform the peer of this status
+			// TODO: Disconnect
+			return;
+		}
+		// check acl
+		if (file.acl.indexOf(paid) < 0) {
+			console.log('requester not in acl');
+			// TODO: notify the peer
+			// TODO: Disconnect
+			return;
+		}
+		file = file.file;
+		if (file === null) return;
+		console.log('sending file:', file.name);
+		file.arrayBuffer()
+			.then(buffer => {
+				this.setState({isSending: true});
+				this.state.peer.send(buffer);
+			});
+	};
+
+	findFile = fileId => {
+		let file = this.state.mySharedFiles.find(item => item.fileName === fileId);
 	}
 
 	// ===== rendering ========================================
@@ -286,7 +347,11 @@ class App extends React.Component {
 		const myFiles= this.state.filesSharedWithMe;
 		const items = myFiles.map((item, i) => {
 			return (
-				<FileDesc file={item} key={i} />
+				<FileDesc
+				file={item}
+				key={i}
+				onDownloadClicked={()=>this.onDownloadFileClicked(item)}
+				/>
 			)
 		});
 		return (

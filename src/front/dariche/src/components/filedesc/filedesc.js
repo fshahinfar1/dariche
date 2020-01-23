@@ -9,7 +9,9 @@ function FileDesc(props) {
 	return (
 		<div className="filedesc-container">
 		<span>{file.sender}: {file.fileName}: {file.fileSize}</span>
-		<button>download</button>
+		<button onClick={() => props.onDownloadClicked()}>
+		download
+		</button>
 		</div>
 	);
 }
