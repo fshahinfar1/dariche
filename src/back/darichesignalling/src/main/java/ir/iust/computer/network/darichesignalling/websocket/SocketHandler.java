@@ -1,5 +1,6 @@
-package ir.iust.computer.network.darichesignalling;
+package ir.iust.computer.network.darichesignalling.websocket;
 
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
@@ -24,6 +25,20 @@ public class SocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         sessions.add(session);
+        session.getAttributes().get("user");
     }
+
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
+        for (WebSocketSession webSocketSession : sessions) {
+            if (!webSocketSession.isOpen() && webSocketSession.getId().equals(session.getId())) {
+                session = webSocketSession;
+                break;
+            }
+        }
+        sessions.remove(session);
+    }
+
 }
 
