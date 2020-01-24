@@ -3,6 +3,7 @@ import Peer from 'simple-peer';
 import {serverAddress} from '../constants';
 import requests from '../misc/requests';
 import download from '../misc/download';
+import {createUser, fetchOnlineUsers} from '../misc/loginUtility';
 import FileDesc from '../components/filedesc/filedesc.js';
 import '../styles/App.css';
 
@@ -53,13 +54,15 @@ class App extends React.Component {
 		//this.setState({isSignallingChannelReady: true}); //not tested
 
 		// websocket
+		const loginRes = await createUser(this.state.myAID, 'password');
+		console.log(loginRes);
 		const ws = new WebSocket(serverAddress +'/socket');
 		ws.onopen = () => {
 			this.wsSend('LOGIN', '', this.state.myAID);
 			this.setState({isSignallingChannelReady: true});
 		}
 		ws.onmessage = msg => this.signallingLogic(JSON.parse(msg.data));
-		this.wsConnection =ws;
+		this.wsConnection = ws;
 	};
 
 	clearPolling = () => {
@@ -177,6 +180,7 @@ class App extends React.Component {
 		console.log('received file:', file);
 		download(file, 'test.txt');  // TODO: save with a correct extention and name ...
 		this.disconnectFromPeer(true);
+		// TODO: free up the buffer
 	}
 
 	/*
@@ -319,7 +323,7 @@ class App extends React.Component {
 				const chunkSize = 16 * 1024 * 1024; // 16KB chunks
 				let sent = 0;
 				while (sent < len) {
-					const chunk = buffer.slice(sent, chunkSize);
+					const chunk = buffer.slice(sent, sent + chunkSize);
 					sent += chunkSize;
 					this.state.peer.send(chunk);
 				}
@@ -366,6 +370,7 @@ class App extends React.Component {
 			destUserName: dest,
 			data: data,
 		};
+		console.log(payload);
 		this.wsConnection.send(JSON.stringify(payload));
 	}
 
