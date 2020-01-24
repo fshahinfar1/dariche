@@ -15,6 +15,7 @@ class App extends React.Component {
 		}
 		this.state = {
 			myAID: props.accountId,
+			isSignallingChannelReady: false,
 			isConnecting: false,
 			isConnected: false,
 			peerAccountId: '',
@@ -25,6 +26,7 @@ class App extends React.Component {
 		this.selectedFile = React.createRef();
 		this.fileDescription = '';
 		this.rBuffers = [];
+		this.wsConnection = null;
 	}
 
 	componentDidMount() {
@@ -43,10 +45,20 @@ class App extends React.Component {
 	registerToServer = async () => {
 		// Send a message to let the server now I am here!
 		// ...
-		const helloURL = `${serverAddress}/hello`;
-		const payload = {sender: this.state.myAID,};
-		requests.post(helloURL, payload);
-		this.pollInterval = setInterval(this.pollSignallingServer, 3000);
+		// polling server
+		//const helloURL = `${serverAddress}/hello`;
+		//const payload = {sender: this.state.myAID,};
+		//requests.post(helloURL, payload);
+		//this.pollInterval = setInterval(this.pollSignallingServer, 3000);
+		//this.setState({isSignallingChannelReady: true}); //not tested
+
+		// websocket
+		const ws = new WebSocket(serverAddress +'/socket');
+		ws.onopen = () => {
+			this.setState({isSignallingChannelReady: true});
+		}
+		ws.onmessage = msg => this.signallingLogic(JSON.parse(msg.data));
+		this.wsConnection =ws;
 	};
 
 	clearPolling = () => {
@@ -68,14 +80,7 @@ class App extends React.Component {
 		if (messages === undefined) return;
 		messages.forEach(item => {
 			// console.log(item);
-			const sender = item.sender;
-			const type = item.type;
-			const payload = JSON.parse(item.message);
-			if (type === 'signal') {
-				this.onSignallingData(sender, payload);
-			} else if (type === 'filedesc') {
-				this.onFileSharedWithMe(sender, payload);
-			}
+			this.signallingLogic(item);
 		});
 	}
 
@@ -85,11 +90,14 @@ class App extends React.Component {
 	 * **/
 	pushSignallingServer = (aid, paid, data, type) => {
 		// send data to signalling server
+		if (this.wsConnection === null || !this.state.isSignallingChannelReady) {
+			throw new Error('signalling channel not established yet!');
+		}
 		if (aid === null || aid === undefined || paid === null
 			|| paid === undefined || type === null || type === undefined) {
 			throw new Error('pushing parameters is invalid');
 		}
-		const url = serverAddress + '/';
+		// const url = serverAddress + '/';
 		let payload = {
 			sender: aid,
 			recipient: paid,
@@ -97,7 +105,8 @@ class App extends React.Component {
 			type,
 		}
 		// console.log('payload', payload);
-		requests.post(url, payload);
+		// requests.post(url, payload);
+		this.wsConnection.send(JSON.stringify(payload));
 	}
 
 	onConnectedToPeer = peer => {
@@ -335,6 +344,18 @@ class App extends React.Component {
 		console.log('file chunk received');
 	}
 
+	signallingLogic = data => {
+		console.log('signalling logic', data);
+		const sender = data.sender;
+		const type = data.type;
+		const payload = JSON.parse(data.message);
+		if (type === 'signal') {
+			this.onSignallingData(sender, payload);
+		} else if (type === 'filedesc') {
+			this.onFileSharedWithMe(sender, payload);
+		}
+	}
+
 	// ===== rendering ========================================
 	renderOnlineUsers = () => {
 		const users = ['farhad', 'fardin', 'hawk']
@@ -434,6 +455,18 @@ class App extends React.Component {
 	}
 
 	render() {
+		if (!this.state.isSignallingChannelReady) {
+			return (
+				<div style={{
+					display:'flex',
+						justifyContent:'center',
+						alignItems:'center',
+						width:'100%',
+						height:'100%'}}>
+				<h2>Connecting to Signalling Server</h2>
+				</div>
+			);
+		}
 		return (
 			<main className="main-container">
 			<div className="card sharedfiles-container">
