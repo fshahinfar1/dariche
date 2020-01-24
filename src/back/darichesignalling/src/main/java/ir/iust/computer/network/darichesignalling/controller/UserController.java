@@ -2,7 +2,6 @@ package ir.iust.computer.network.darichesignalling.controller;
 
 import ir.iust.computer.network.darichesignalling.model.User;
 import ir.iust.computer.network.darichesignalling.service.UserService;
-import org.hibernate.validator.constraints.EAN;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
