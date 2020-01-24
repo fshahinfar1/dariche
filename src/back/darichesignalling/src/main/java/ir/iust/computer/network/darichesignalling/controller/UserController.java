@@ -1,10 +1,12 @@
 package ir.iust.computer.network.darichesignalling.controller;
 
+import ir.iust.computer.network.darichesignalling.dto.UserDto;
 import ir.iust.computer.network.darichesignalling.model.User;
 import ir.iust.computer.network.darichesignalling.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,6 +17,8 @@ import java.util.stream.Collectors;
 @RequestMapping(produces = "application/json", path = "/users")
 public class UserController {
 
+    @Autowired
+    private PasswordEncoder passwordEncoder;
     private final UserService userService;
 
     @Autowired
@@ -29,7 +33,10 @@ public class UserController {
     }
 
     @PostMapping(path = "/add")
-    public ResponseEntity<User> registerUser(@RequestBody User user) {
+    public ResponseEntity<User> registerUser(@RequestBody UserDto userDto) {
+        User user = new User();
+        user.setUsername(userDto.getUsername());
+        user.setPassword(passwordEncoder.encode(userDto.getPassword()));
         return new ResponseEntity<>(userService.add(user), HttpStatus.CREATED);
     }
 }

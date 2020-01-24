@@ -2,6 +2,9 @@ package ir.iust.computer.network.darichesignalling.service;
 
 import ir.iust.computer.network.darichesignalling.model.User;
 import ir.iust.computer.network.darichesignalling.repository.UserRepository;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -9,7 +12,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
-public class UserService {
+public class UserService implements UserDetailsService {
     @Resource
     private UserRepository userRepository;
 
@@ -35,10 +38,15 @@ public class UserService {
     }
 
     public User getUserByUserName(String userName) {
-        return userRepository.findByUserName(userName).orElseThrow(NullPointerException::new);
+        return userRepository.findByUsername(userName).orElseThrow(NullPointerException::new);
     }
 
     public User add(User user) {
         return userRepository.save(user);
+    }
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        return userRepository.findByUsername(username).orElseThrow(NullPointerException::new);
     }
 }
