@@ -28,8 +28,7 @@ public class SocketHandler extends TextWebSocketHandler {
             User user = userService.getUserByUserName(signallingMessage.getData());
             synchronized (this) {
                 if (user.getSessionId().isEmpty()) {
-                    user.setSessionId(session.getId());
-                    userService.add(user);
+                    userService.setSessionId(user.getId(),session.getId());
                 }
             }
         } else {
