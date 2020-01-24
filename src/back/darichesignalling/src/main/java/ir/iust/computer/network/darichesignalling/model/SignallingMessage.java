@@ -5,6 +5,6 @@ import lombok.Data;
 @Data
 public class SignallingMessage {
     private SignalType signalType;
-    private String data;
+    private Object data;
     private String destUserName;
 }

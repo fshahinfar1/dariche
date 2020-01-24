@@ -16,19 +16,30 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class SocketHandler extends TextWebSocketHandler {
-    @Autowired
-    private UserService userService;
+
+
+    private final UserService userService;
     private List<WebSocketSession> sessions = new CopyOnWriteArrayList<>();
     private ObjectMapper objectMapper = new ObjectMapper();
+
+
+    public SocketHandler(UserService userService) {
+        this.userService = userService;
+    }
 
     @Override
     public void handleTextMessage(WebSocketSession session, TextMessage message) throws InterruptedException, IOException {
         SignallingMessage signallingMessage = objectMapper.readValue(message.getPayload(), SignallingMessage.class);
         if (signallingMessage.getSignalType().equals(SignalType.LOGIN)) {
-            User user = userService.getUserByUserName(signallingMessage.getData());
+            User user = userService.getUserByUserName((String) signallingMessage.getData());
             synchronized (this) {
                 if (user.getSessionId().isEmpty()) {
-                    userService.setSessionId(user.getId(),session.getId());
+                    userService.setSessionId(user.getId(), session.getId());
+                } else {
+                    SignallingMessage replay = new SignallingMessage();
+                    replay.setSignalType(SignalType.ERROR);
+                    replay.setData("already login");
+                    session.sendMessage(new TextMessage(replay.toString()));
                 }
             }
         } else {
@@ -56,7 +67,11 @@ public class SocketHandler extends TextWebSocketHandler {
                 break;
             }
         }
-        userService.removeSession(session.getId());
+        try {
+            userService.removeSession(session.getId());
+        }catch (NullPointerException e){
+            //
+        }
         sessions.remove(session);
     }
 
