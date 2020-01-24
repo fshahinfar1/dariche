@@ -55,6 +55,7 @@ class App extends React.Component {
 		// websocket
 		const ws = new WebSocket(serverAddress +'/socket');
 		ws.onopen = () => {
+			this.wsSend('LOGIN', '', this.state.myAID);
 			this.setState({isSignallingChannelReady: true});
 		}
 		ws.onmessage = msg => this.signallingLogic(JSON.parse(msg.data));
@@ -98,7 +99,7 @@ class App extends React.Component {
 			throw new Error('pushing parameters is invalid');
 		}
 		// const url = serverAddress + '/';
-		let payload = {
+		const payload = {
 			sender: aid,
 			recipient: paid,
 			message: JSON.stringify(data),
@@ -106,7 +107,7 @@ class App extends React.Component {
 		}
 		// console.log('payload', payload);
 		// requests.post(url, payload);
-		this.wsConnection.send(JSON.stringify(payload));
+		this.wsSend('SIGNAL', paid, payload);
 	}
 
 	onConnectedToPeer = peer => {
@@ -354,6 +355,18 @@ class App extends React.Component {
 		} else if (type === 'filedesc') {
 			this.onFileSharedWithMe(sender, payload);
 		}
+	}
+
+	wsSend = (type, dest, data) => {
+		if (this.wsConnection === null) {
+			throw new Error('ws connection does not exists');
+		}
+		const payload = {
+			signalType: type,
+			destUserName: dest,
+			data: data,
+		};
+		this.wsConnection.send(JSON.stringify(payload));
 	}
 
 	// ===== rendering ========================================
