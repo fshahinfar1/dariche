@@ -1,5 +1,6 @@
-package ir.iust.computer.network.darichesignalling;
+package ir.iust.computer.network.darichesignalling.configuration;
 
+import ir.iust.computer.network.darichesignalling.websocket.SocketHandler;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
