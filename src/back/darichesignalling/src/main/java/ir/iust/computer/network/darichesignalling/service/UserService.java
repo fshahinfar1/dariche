@@ -27,4 +27,17 @@ public class UserService {
     }
 
 
+    public void setSessionId(Long userId, String sessionId) {
+        User user = userRepository.findById(userId).orElseThrow(NullPointerException::new);
+        user.setSessionId(sessionId);
+        userRepository.save(user);
+    }
+
+    public User getUserByUserName(String userName) {
+        return userRepository.findByUserName(userName).orElseThrow(NullPointerException::new);
+    }
+
+    public User add(User user) {
+        return userRepository.save(user);
+    }
 }
