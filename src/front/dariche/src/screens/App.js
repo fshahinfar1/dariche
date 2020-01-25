@@ -23,6 +23,8 @@ class App extends React.Component {
 			peer: null,
 			filesSharedWithMe: [],
 			mySharedFiles: [],
+			onlineUsers: [],
+			selectedUsers: [],
 		};
 		this.selectedFile = React.createRef();
 		this.fileDescription = '';
@@ -36,6 +38,7 @@ class App extends React.Component {
 
 	componentWillUnmount() {
 		this.clearPolling();
+		this.clearOnlineUserPolling();
 	}
 
 	/*
@@ -60,6 +63,7 @@ class App extends React.Component {
 		ws.onopen = () => {
 			this.wsSend('LOGIN', this.state.myAID, this.state.myAID);
 			this.setState({isSignallingChannelReady: true});
+			this.pollOnlineUsersInterval = setInterval(this.pollOnlineUsers, 3000);
 		}
 		ws.onmessage = msg => {
 			console.log('ws onmessage:', msg.data);
@@ -152,7 +156,6 @@ class App extends React.Component {
 	 * **/
 	onDataReceived = data => {
 		const sender = this.state.peerAccountId;
-		console.log('sender is ', sender);
 		if (sender === '') {
 			throw new Error('receive data on data channel but {paid} is not set');
 		}
@@ -193,8 +196,12 @@ class App extends React.Component {
 	 * a peer.
 	 * **/
 	onShareClicked = () => {
+		const recipients = this.state.selectedUsers;
+		if (recipients.length === 0) {
+			throw new Error('No recipients for sharing files');
+		}
 		let file = this.selectedFile.current;
-		if (file === null, file.files[0] === null)
+		if (file === null || file.files[0] === null)
 			return
 		file = file.files[0];
 		// console.log(file);
@@ -205,22 +212,24 @@ class App extends React.Component {
 			fileSize: file.size,
 			description: this.fileDescription,
 		};
-		const recipient = this.state.peerAccountId;
-		this.pushSignallingServer(this.state.myAID, recipient,
+		recipients.forEach(recipient => {
+			this.pushSignallingServer(this.state.myAID, recipient,
 															payload, 'filedesc');
+		});
 		// update my shared files state
 		const fileId = file.name;
 		let fileDesc = this.findFile(fileId);
 		if (fileDesc === undefined) {
 			fileDesc = {
 				fileId: file.name,
-				acl: [], // access control list
+				acl: new Set(), // access control list
 				file: file,
 			}
 		}
-		fileDesc.acl.push(recipient);
-		const mySharedFiles = this.state.
-											mySharedFiles.filter(file => file.fileId !== fileId)
+		recipients.forEach(recipient => {
+			fileDesc.acl.add(recipient);
+		});
+		const mySharedFiles = this.state.mySharedFiles.filter(file => file.fileId !== fileId)
 		mySharedFiles.push(fileDesc);
 		this.setState({mySharedFiles,});
 	}
@@ -244,6 +253,16 @@ class App extends React.Component {
 		const text = evnt.target.value;
 		console.log(text);
 		this.fileDescription = text;
+	}
+
+	onUserClicked = userName => {
+		let selectedUsers = this.state.selectedUsers;
+		const currentLen = selectedUsers.length
+		selectedUsers = selectedUsers.filter(u => u !== userName);
+		if (selectedUsers.length === currentLen) {
+			selectedUsers.push(userName);
+		}
+		this.setState({selectedUsers,});
 	}
 
 	setupPeer = (paid, initiator, callback) => {
@@ -311,7 +330,7 @@ class App extends React.Component {
 			return;
 		}
 		// check acl
-		if (file.acl.indexOf(paid) < 0) {
+		if (!file.acl.has(paid)) {
 			console.log('requester not in acl');
 			// TODO: notify the peer
 			// TODO: Disconnect
@@ -380,16 +399,38 @@ class App extends React.Component {
 		this.wsConnection.send(JSON.stringify(payload));
 	}
 
+	pollOnlineUsers = async () => {
+		const res = await fetchOnlineUsers();
+		this.setState({onlineUsers:res});
+	}
+
+	clearOnlineUserPolling = () => {
+		if (this.pollOnlineUsersInterval) {
+			clearInterval(this.pollOnlineUsersInterval);
+		}
+	}
+
 	// ===== rendering ========================================
 	renderOnlineUsers = () => {
-		const users = ['farhad', 'fardin', 'hawk']
+		const users = this.state.onlineUsers;
+		const selectedUsers = this.state.selectedUsers;
 		const items = users.map(item => {
+			const name = item.userName;
+			const selected = (selectedUsers.filter(u => u === name).length > 0);
+			const isSelf = this.state.myAID === name;
+			const txtColor = selected ? 'white' : 'black';
+			const bgColor = selected ? 'green' : 'white';
 			return (
 				<div
 				className="user-list-instance"
-				key={item}
+				key={name}
+				style={{
+					backgroundColor: bgColor,
+				}}
+				onClick={isSelf ? undefined : () => this.onUserClicked(name)}
+				disabled={isSelf ? 'disabled' : ''}
 				>
-				<p>{item}</p>
+				<p style={{color:txtColor}}>{name}</p>
 				</div>
 			);
 		});
@@ -402,16 +443,23 @@ class App extends React.Component {
 	}
 
 	renderSharingSection = () => {
+		if (this.state.selectedUsers.length === 0) {
+			return (
+				<div>
+					<h2>No user is selected!</h2>
+				</div>
+			);
+		}
 		return (
 			<div>
 			<form className="share-form">
-			<input
+			{/*<input
 			type="text"
 			placeholder="peer account id"
 			value={this.state.peerAccountId}
 			onChange={evt => this.setState({peerAccountId:evt.target.value})}
 			disabled={this.state.isConnecting ? 'disabled' : ''}
-			/>
+			/>*/}
 			<input
 			type="file"
 			id="file-input"
@@ -432,27 +480,6 @@ class App extends React.Component {
 			onClick={this.onShareClicked}
 			/>
 			</form>
-			</div>
-		);
-	}
-
-	renderSendingSection = () => {
-		return (
-			<div>
-					<div>
-					<input
-					type="file"
-					id="file-input"
-					disabled={this.isSending ? 'disabled' : ''}
-					ref={this.selectedFile}
-					/>
-					<input
-					type="button"
-					value="share"
-					onClick={this.onShareClicked}
-					disabled={this.isSending ? 'disabled' : ''}
-					/>
-					</div>
 			</div>
 		);
 	}
