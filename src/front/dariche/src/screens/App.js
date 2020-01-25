@@ -54,14 +54,18 @@ class App extends React.Component {
 		//this.setState({isSignallingChannelReady: true}); //not tested
 
 		// websocket
-		const loginRes = await createUser(this.state.myAID, 'password');
-		console.log(loginRes);
+		//const loginRes = await createUser(this.state.myAID, 'password');
+		//console.log(loginRes);
 		const ws = new WebSocket(serverAddress +'/socket');
 		ws.onopen = () => {
-			this.wsSend('LOGIN', '', this.state.myAID);
+			this.wsSend('LOGIN', this.state.myAID, this.state.myAID);
 			this.setState({isSignallingChannelReady: true});
 		}
-		ws.onmessage = msg => this.signallingLogic(JSON.parse(msg.data));
+		ws.onmessage = msg => {
+			console.log('ws onmessage:', msg.data);
+			msg = JSON.parse(msg.data);
+			this.signallingLogic(msg.data);
+		}
 		this.wsConnection = ws;
 	};
 
@@ -159,7 +163,7 @@ class App extends React.Component {
 				this.sendFile(_data.fileName);
 			} else if (_data.type === 'filedone') {
 				console.log('all chunks received');
-				this.onAllFileChunkReceived(sender);
+				this.onAllFileChunkReceived(sender, _data.fileId);
 			} else if (_data.type === 'goodbye') {
 				this.disconnectFromPeer(false);
 			} else {
@@ -170,17 +174,18 @@ class App extends React.Component {
 		}
 	};
 
-	onAllFileChunkReceived = sender => {
+	onAllFileChunkReceived = (sender, fileId) => {
 		console.log('on all file chunk received');
 		if (!(sender in this.rBuffers)) {
 			throw new Error('File received event but no buffer allocated!');
 		}
 		const rcvBuf = this.rBuffers[sender];
 		const file = new Blob(rcvBuf);
-		console.log('received file:', file);
-		download(file, 'test.txt');  // TODO: save with a correct extention and name ...
+		console.log('received file:', file, fileId);
+		download(file, fileId);
 		this.disconnectFromPeer(true);
 		// TODO: free up the buffer
+		delete this.rBuffers[sender];
 	}
 
 	/*
@@ -329,6 +334,7 @@ class App extends React.Component {
 				}
 				const payload = {
 					type: 'filedone',
+					fileId,
 				}
 				this.state.peer.send(JSON.stringify(payload));
 			});
