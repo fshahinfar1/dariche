@@ -5,7 +5,6 @@ import ir.iust.computer.network.darichesignalling.model.SignalType;
 import ir.iust.computer.network.darichesignalling.model.SignallingMessage;
 import ir.iust.computer.network.darichesignalling.model.User;
 import ir.iust.computer.network.darichesignalling.service.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -39,7 +38,7 @@ public class SocketHandler extends TextWebSocketHandler {
                     SignallingMessage replay = new SignallingMessage();
                     replay.setSignalType(SignalType.ERROR);
                     replay.setData("already login");
-                    session.sendMessage(new TextMessage(replay.toString()));
+                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(replay)));
                 }
             }
         } else {
@@ -69,7 +68,7 @@ public class SocketHandler extends TextWebSocketHandler {
         }
         try {
             userService.removeSession(session.getId());
-        }catch (NullPointerException e){
+        } catch (NullPointerException e) {
             //
         }
         sessions.remove(session);
