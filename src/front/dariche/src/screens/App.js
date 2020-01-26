@@ -7,6 +7,9 @@ import {createUser, fetchOnlineUsers} from '../misc/loginUtility';
 import FileDesc from '../components/filedesc/filedesc.js';
 import '../styles/App.css';
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 class App extends React.Component {
 	constructor(props) {
@@ -129,6 +132,7 @@ class App extends React.Component {
 			isSending: false,
 			peer: peer,
 		});
+		peer._channel.onbufferedamountlow = () => {console.log('wow!!');this.canSend=true;}
 	};
 
 	/*
@@ -283,6 +287,9 @@ class App extends React.Component {
 			if (callback !== undefined) callback.call();
 		});
 		peer.on('data', this.onDataReceived);
+		peer.on('close', this.disconnectFromPeer);
+		peer.on('error', e => {console.log('error', e);this.disconnectFromPeer();});
+		this.canSend = true;
 		return peer;
 	};
 
@@ -305,7 +312,8 @@ class App extends React.Component {
 			isConnected: false,
 			isConnecting: false,
 		});
-		callback.call();
+		if (callback !== undefined)
+			callback.call();
 	}
 
 	/*
@@ -340,24 +348,49 @@ class App extends React.Component {
 		if (file === null) return;
 		console.log('sending file:', file.name);
 		file.arrayBuffer()
-			.then(buffer => {
+			.then(async buffer => {
 				// Send files in chunks
 				this.setState({isSending: true});
 				const len = buffer.byteLength;
-				const chunkSize = 16 * 1024 * 1024; // 16KB chunks
+				const chunkSize = 16 * 1024; // 16KB chunks
 				let sent = 0;
 				while (sent < len) {
 					const chunk = buffer.slice(sent, sent + chunkSize);
 					sent += chunkSize;
-					this.state.peer.send(chunk);
+					//this.state.peer.send(chunk);
+					await this.sendBufferAware(this.state.peer, chunk);
 				}
 				const payload = {
 					type: 'filedone',
 					fileId,
 				}
 				this.state.peer.send(JSON.stringify(payload));
-			});
+			})
+		.catch(e => {
+			console.error('error while sending file', e);
+			throw e;
+		});
 	};
+
+	sendBufferAware = (peer, chunk) => {
+		const p = new Promise(async (resolve, reject) => {
+			const dChan = peer._channel;
+			let bufSize = dChan.bufferedAmount;
+			// console.log(bufSize);
+			while (!this.canSend) {
+				await sleep(1);
+				bufSize = peer._channel.bufferedAmount;
+				if (bufSize < 5 * 1024) {
+					this.canSend = true;
+				}
+			}
+			// console.log('sneding');
+			dChan.send(chunk);
+			this.canSend = false;
+			resolve.call();
+		});
+		return p;
+	}
 
 	findFile = fileId => {
 		const file = this.state.mySharedFiles
