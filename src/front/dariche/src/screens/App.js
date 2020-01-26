@@ -6,6 +6,7 @@ import download from '../misc/download';
 import {createUser, fetchOnlineUsers} from '../misc/loginUtility';
 import FileDesc from '../components/filedesc/filedesc.js';
 import '../styles/App.css';
+import { ProgressBar } from 'react-bootstrap';
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -33,6 +34,7 @@ class App extends React.Component {
 		this.fileDescription = '';
 		this.rBuffers = [];
 		this.wsConnection = null;
+		this.chunkSize = 16 * 1024;
 	}
 
 	componentDidMount() {
@@ -352,11 +354,11 @@ class App extends React.Component {
 				// Send files in chunks
 				this.setState({isSending: true});
 				const len = buffer.byteLength;
-				const chunkSize = 16 * 1024; // 16KB chunks
+				 // 16KB chunks
 				let sent = 0;
 				while (sent < len) {
-					const chunk = buffer.slice(sent, sent + chunkSize);
-					sent += chunkSize;
+					const chunk = buffer.slice(sent, sent + this.chunkSize);
+					sent += this.chunkSize;
 					//this.state.peer.send(chunk);
 					await this.sendBufferAware(this.state.peer, chunk);
 				}
@@ -520,12 +522,22 @@ class App extends React.Component {
 	renderSharedFilesSection = () => {
 		const myFiles= this.state.filesSharedWithMe;
 		const items = myFiles.map((item, i) => {
+			var received_data = 0;
+			if(this.rBuffers[this.state.peerAccountId]!=null ){
+				received_data = ((this.rBuffers[this.state.peerAccountId].length)*this.chunkSize/item.fileSize)*100;
+			}
+			if(received_data >= 100){
+				received_data = 100;
+			}
 			return (
+				<div>
 				<FileDesc
 				file={item}
 				key={i}
 				onDownloadClicked={()=>this.onDownloadFileClicked(item)}
 				/>
+				<ProgressBar animated now={received_data} />
+				</div>
 			)
 		});
 		return (
